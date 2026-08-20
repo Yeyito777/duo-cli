@@ -1,0 +1,9 @@
+{
+  "name": "duo",
+  "bin": "./bin/duo",
+  "systemHint": "You have access to the narrowly scoped `duo` tool for a separately enrolled, tenant-authorized local emulated Duo device. Use only `duo requests`, `duo request REQUEST_ID`, then `duo approve REQUEST_ID --confirm-fingerprint FINGERPRINT` with exact displayed values. Never approve an unfamiliar sign-in, infer an ID/code, or provide a code in argv; read `duo --help` before setup commands.",
+  "display": {
+    "label": "Duo",
+    "color": "#d66b2f"
+  }
+}

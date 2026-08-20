@@ -1,0 +1,17 @@
+duo-cli includes a deliberately limited adaptation of private-protocol code from:
+
+  Yubo-Cao/calsh
+  https://github.com/Yubo-Cao/calsh
+  commit 84b048c9a8a8ccd21bae0558f520a548907d11e7
+  Copyright (c) 2026 Yubo Cao
+  Licensed under the MIT License (included in LICENSE).
+
+Adapted portions are limited to the local-device activation profile, RSA-SHA512
+request signing, enrolled-state loading, transaction retrieval, and one exact
+transaction reply in src/duo_cli/real_backend.py. This project does not copy or
+expose calsh's broad CLI, watcher, daemon, approve-once/drain, deny, passcode,
+notification, or SSH wrapper behavior.
+
+calsh credits protocol research including falsidge/ruo (MIT) and
+revalo/duo-bypass. This unsupported private-protocol implementation is not
+affiliated with, endorsed by, or supported by Duo Security.

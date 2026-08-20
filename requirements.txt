@@ -1,0 +1,2 @@
+# Default reproducible install entry point. It is intentionally hash-checked.
+-r requirements.lock

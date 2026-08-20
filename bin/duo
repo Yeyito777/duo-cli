@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Thin external-tool wrapper. The Python CLI owns argument validation and all
+# safety checks; this script only resolves the independently installed runtime.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PYTHON="$PROJECT_DIR/.venv/bin/python3"
+
+usage() {
+  cat <<'USAGE'
+duo — narrowly scoped client for one separately enrolled local emulated Duo device
+
+Usage:
+  duo requests [--json]
+  duo request REQUEST_ID [--json]
+  duo approve REQUEST_ID --confirm-fingerprint FINGERPRINT [--code-stdin] [--json]
+  duo login --qr FILE [--json]       # setup only; performs real pairing if invoked
+  duo logout [--json]                # removes local state only
+
+Global option (before the command):
+  --state-dir DIR                     # defaults to DUO_STATE_DIR or tool config/
+
+Only exact IDs and code-independent fingerprints displayed by `duo request` may
+be approved. Verified Push codes are accepted only through exact bounded stdin
+with `--code-stdin`; argv codes are rejected. There is no latest, wildcard, bulk,
+watcher, daemon, deny, or automatic-approval command. `login` uses unsupported
+private Duo protocol and must only be used after explicit tenant authorization for
+a separately enrolled device. Run `duo COMMAND --help` for detail.
+USAGE
+}
+
+prefix=()
+while [[ "${1:-}" == "--state-dir" ]]; do
+  if [[ $# -lt 2 ]]; then
+    echo "duo: --state-dir requires DIR" >&2
+    exit 2
+  fi
+  prefix+=(--state-dir "$2")
+  shift 2
+done
+
+cmd="${1:-}"
+case "$cmd" in
+  -h|--help|help|"")
+    usage
+    if [[ "$cmd" == "" ]]; then
+      exit 2
+    fi
+    exit 0
+    ;;
+  requests|request|approve|login|logout)
+    if [[ ! -x "$PYTHON" ]]; then
+      echo "duo: runtime not installed at $PYTHON" >&2
+      echo "Create it with: python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements.lock" >&2
+      exit 1
+    fi
+    shift
+    export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    exec "$PYTHON" -m src.duo_cli.cli "${prefix[@]}" "$cmd" "$@"
+    ;;
+  *)
+    echo "duo: unknown command '$cmd'" >&2
+    echo "Run 'duo --help' for usage." >&2
+    exit 2
+    ;;
+esac

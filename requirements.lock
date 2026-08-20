@@ -1,0 +1,17 @@
+# Fully resolved hash lock for Linux x86_64 / CPython 3.14, generated offline
+# from pip downloads on 2026-08-19 with pip 26.0.1. Do not use this lock on a
+# different Python/platform without regenerating and reviewing all hashes.
+--only-binary=:all:
+
+certifi==2026.7.22 \
+    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+charset-normalizer==3.5.1 \
+    --hash=sha256:15f024313246a4ed976c60f440bb8d257815513a681d212ff74fd46f7d715a90
+idna==3.19 \
+    --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
+pycryptodome==3.21.0 \
+    --hash=sha256:0714206d467fc911042d01ea3a1847c847bc10884cf674c82e12915cfe1649f8
+requests==2.32.3 \
+    --hash=sha256:70761cfe03c773ceb22aa2f671b4757976145175cdfca038c02654d061d6dcc6
+urllib3==2.7.0 \
+    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897

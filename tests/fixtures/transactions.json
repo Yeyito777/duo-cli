@@ -1,0 +1,43 @@
+{
+  "plain": {
+    "urgid": "req-alpha-01",
+    "status": "pending",
+    "verified_push": false,
+    "attributes": [
+      {"name": "Application", "value": "Campus VPN"},
+      {"name": "Username", "value": "student@example.edu"},
+      {"name": "HOST", "value": "vpn.example.edu"},
+      {"name": "Time", "value": "2099-01-02T03:04:05Z"},
+      {"name": "Ignored payload", "value": "must-not-be-rendered"}
+    ],
+    "untrusted_internal_blob": "must-not-be-rendered"
+  },
+  "verified": {
+    "urgid": "req-code-02",
+    "status": "pending",
+    "verified_push": true,
+    "attributes": {
+      "Application": "Research Portal",
+      "Username": "student@example.edu",
+      "Location": "Toronto, ON",
+      "Verification Code": "492"
+    }
+  },
+  "expired": {
+    "urgid": "req-expired-03",
+    "status": "pending",
+    "verified_push": false,
+    "attributes": {
+      "Application": "Old Session",
+      "Expires At": "2000-01-01T00:00:00Z"
+    }
+  },
+  "unknown": {
+    "urgid": "req-unknown-04",
+    "status": "pending",
+    "attributes": {
+      "Application": "Unmarked Challenge",
+      "Username": "student@example.edu"
+    }
+  }
+}

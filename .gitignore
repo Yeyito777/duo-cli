@@ -1,0 +1,35 @@
+# Local runtime and Python build/test output
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment files, logs, and editor/OS debris
+.env
+.env.*
+*.log
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Enrollment state is the second factor: never commit it.
+config/*
+!config/.gitkeep
+
+# Defensive exclusions for accidentally copied enrollment material.
+*.pem
+*.key
+*.p12
+*.pfx
+*activation*.png
+*activation*.jpg
+*activation*.jpeg
+*activation*.webp
