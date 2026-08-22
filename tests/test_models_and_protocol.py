@@ -210,6 +210,26 @@ class ModelAndPrivateProtocolTests(unittest.TestCase):
         args, kwargs = spy.calls[0]
         self.assertEqual(args, ("POST", "https://api-0123abcd.duosecurity.com/push/v2/device/transactions/opaque-id"))
         self.assertEqual(kwargs["headers"]["txId"], "opaque-id")
+        self.assertEqual(
+            list(kwargs["data"]),
+            [
+                "akey",
+                "answer",
+                "fips_status",
+                "hsm_status",
+                "pin_data",
+                "pkpush",
+                "step_up_code",
+                "txid_code",
+                "verification_code",
+            ],
+        )
+        canonical = FakeHash.messages[0].decode("ascii").split("\n")[-1]
+        self.assertEqual(
+            canonical,
+            "akey=fake-akey&answer=approve&fips_status=1&hsm_status=true&pin_data=777&"
+            "pkpush=rsa-sha512&step_up_code=777&txid_code=777&verification_code=777",
+        )
         self.assertEqual(len(spy.calls), 1)
 
     def test_malformed_signing_values_are_rejected_before_crypto_or_transport(self) -> None:
@@ -236,6 +256,27 @@ class ModelAndPrivateProtocolTests(unittest.TestCase):
                         duo.transactions()
             self.assertEqual(len(spy.calls), 1)
             self.assertFalse(spy.trust_env)
+
+    def test_http_error_exposes_only_bounded_allowlisted_duo_diagnostics(self) -> None:
+        safe = FakeResponse(
+            status_code=401,
+            body={"code": 40103, "message": "Invalid signature", "secret": "must-not-render"},
+        )
+        unsafe = FakeResponse(
+            status_code=401,
+            body={"code": "40103", "message": "bad\nterminal", "secret": "must-not-render"},
+        )
+        for response, expected in ((safe, "Duo code 40103: Invalid signature"), (unsafe, "HTTP 401")):
+            with self.subTest(expected=expected):
+                with tempfile.TemporaryDirectory() as temporary, ExclusiveStateLock(StatePaths(Path(temporary))) as state:
+                    duo = Duo(state, session=SessionSpy([response]))
+                    duo.key, duo.host, duo.akey, duo.pkey = object(), "api-0123abcd.duosecurity.com", "fake-akey", "fake-pkey"
+                    with patch("src.duo_cli.real_backend._dependencies", return_value=(FakeRequests, FakeHash, object(), FakePkcs)):
+                        with self.assertRaises(DuoCliError) as caught:
+                            duo.transactions()
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn("must-not-render", str(caught.exception))
+                self.assertNotIn("bad\nterminal", str(caught.exception))
 
     def test_loaded_state_rejects_invalid_host_before_crypto_or_network(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, ExclusiveStateLock(StatePaths(Path(temporary))) as state:

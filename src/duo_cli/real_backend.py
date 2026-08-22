@@ -169,7 +169,22 @@ class Duo:
         self._validate_signing_inputs(method, path, when, params)
         _, SHA512, _, pkcs1_15 = _dependencies()
         assert self.key is not None and self.host is not None and self.pkey is not None
-        message = (when + "\n" + method + "\n" + self.host + "\n" + path + "\n" + urllib.parse.urlencode(params)).encode("ascii")
+        # Duo canonicalizes form/query parameters by key before checking the
+        # signature.  The ordinary transaction shapes happened to be inserted
+        # in sorted order already, masking this requirement; Verified Push adds
+        # code fields after pkpush and otherwise produces HTTP 401/40103.
+        canonical_params = sorted(params.items())
+        message = (
+            when
+            + "\n"
+            + method
+            + "\n"
+            + self.host
+            + "\n"
+            + path
+            + "\n"
+            + urllib.parse.urlencode(canonical_params)
+        ).encode("ascii")
         signature = pkcs1_15.new(self.key).sign(SHA512.new(message))
         token = base64.b64encode(signature).decode("ascii")
         return "Basic " + base64.b64encode((self.pkey + ":" + token).encode("ascii")).decode("ascii")
@@ -177,7 +192,31 @@ class Duo:
     def _response_json(self, response: Any, *, operation: str) -> dict[str, Any]:
         # Do not call raise_for_status: its message embeds a transaction URL.
         if not 200 <= response.status_code < 300:
-            raise DuoCliError(f"Duo {operation} request was rejected (HTTP {response.status_code}).")
+            # Duo's ordinary error JSON has bounded public diagnostics such as a
+            # numeric code and short message.  Surface only those allowlisted
+            # scalar fields; never echo raw response text, headers, URLs, or
+            # protocol payloads.
+            detail = ""
+            try:
+                body = response.json()
+            except (ValueError, TypeError):
+                body = None
+            if isinstance(body, dict):
+                code = body.get("code")
+                message = body.get("message")
+                code_text = str(code) if isinstance(code, (int, str)) else ""
+                message_text = message if isinstance(message, str) else ""
+                if (
+                    code_text.isascii()
+                    and re.fullmatch(r"[A-Za-z0-9._~-]{1,32}", code_text)
+                    and message_text.isascii()
+                    and 1 <= len(message_text) <= 160
+                    and all(character.isprintable() for character in message_text)
+                ):
+                    detail = f"; Duo code {code_text}: {message_text}"
+            raise DuoCliError(
+                f"Duo {operation} request was rejected (HTTP {response.status_code}{detail})."
+            )
         try:
             body = response.json()
         except (ValueError, TypeError) as exc:
@@ -190,8 +229,9 @@ class Duo:
         assert self.host is not None
         validate_api_host(self.host)
         when = email.utils.format_datetime(datetime.datetime.now(datetime.timezone.utc))
+        wire_params = dict(sorted(params.items()))
         headers = {
-            "Authorization": self._sign(method, path, when, params),
+            "Authorization": self._sign(method, path, when, wire_params),
             "x-duo-date": when,
             "host": self.host,
             "User-Agent": USER_AGENT,
@@ -204,8 +244,8 @@ class Duo:
             response = self._session().request(
                 method,
                 f"https://{self.host}{path}",
-                params=params if method == "GET" else None,
-                data=params if method == "POST" else None,
+                params=wire_params if method == "GET" else None,
+                data=wire_params if method == "POST" else None,
                 headers=headers,
                 timeout=15,
                 allow_redirects=False,
