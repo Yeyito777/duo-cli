@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 from typing import Callable, Sequence
 
 from .backend import DuoBackend
@@ -21,6 +22,7 @@ from .errors import (
     UsageError,
     VerifiedPushError,
 )
+from . import own_login
 from .models import CODE_RE, URGID_RE, PendingRequest, VerificationMode
 from .real_backend import RealDuoBackend
 from .render import emit_json, render_request, render_requests
@@ -68,6 +70,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     login.add_argument("--qr", metavar="FILE", required=True, help="local activation QR image; it is never echoed")
     login.add_argument("--json", action="store_true", help="emit schemaVersion 1 JSON")
+
+    own = sub.add_parser(
+        "own-login",
+        help="utmail/quercus only: approve the Verified Push of a U of T login that tool itself started",
+    )
+    own_sub = own.add_subparsers(dest="own_action", required=True)
+    own_begin = own_sub.add_parser("begin", help="start a short own-login ticket (cap, lock, no pending requests)")
+    own_begin.add_argument("--caller", required=True, choices=sorted(own_login.CALLERS))
+    own_begin.add_argument("--json", action="store_true", help="emit schemaVersion 1 JSON")
+    own_approve = own_sub.add_parser(
+        "approve",
+        help="approve the single matching request; code from the caller's own Duo page on stdin; account from UOFT_UTORID",
+    )
+    own_approve.add_argument("ticket", metavar="TICKET")
+    own_approve.add_argument("--json", action="store_true", help="emit schemaVersion 1 JSON")
+    own_end = own_sub.add_parser("end", help="release the ticket and record the login outcome")
+    own_end.add_argument("ticket", metavar="TICKET")
+    own_end.add_argument("--outcome", required=True, choices=["completed", "failed"])
+    own_end.add_argument("--json", action="store_true", help="emit schemaVersion 1 JSON")
 
     logout = sub.add_parser("logout", help="remove local enrollment state only; makes no Duo network call")
     logout.add_argument("--json", action="store_true", help="emit schemaVersion 1 JSON")
@@ -215,6 +236,35 @@ def _run_approve(args: argparse.Namespace, backend: DuoBackend) -> None:
         print(f"Approved. Request ID: {second.request_id}")
 
 
+def _run_own_login(args: argparse.Namespace, state: StateDirectory, backend_factory: BackendFactory) -> None:
+    if args.own_action == "end":
+        removed = own_login.end(state, args.ticket, args.outcome, now=time.time())
+        if args.json:
+            emit_json({"ownLogin": {"ended": True, "ticketReleased": removed}})
+        else:
+            print("Own-login ended.")
+        return
+    backend = backend_factory(state)
+    if args.own_action == "begin":
+        result = own_login.begin(state, backend, args.caller, now=time.time())
+        if args.json:
+            emit_json({"ownLogin": result})
+        else:
+            print(f"Ticket: {result['ticket']}")
+        return
+    approved = own_login.approve(
+        state,
+        backend,
+        args.ticket,
+        read_code=_read_code_stdin,
+        verify_code=_verify_code,
+    )
+    if args.json:
+        emit_json({"approved": approved.to_dict()})
+    else:
+        print(f"Approved own login. Request ID: {approved.request_id}")
+
+
 def _run_login(args: argparse.Namespace, backend: DuoBackend) -> None:
     qr_file = Path(args.qr).expanduser()
     backend.login_from_qr(qr_file)
@@ -238,7 +288,11 @@ def main(argv: Sequence[str] | None = None, *, backend_factory: BackendFactory =
     try:
         # There is one non-blocking exclusive lock for every subcommand,
         # including reads and setup lifecycle actions.
-        with ExclusiveStateLock(paths) as state:
+        wait = 15.0 if args.command == "own-login" else 0.0
+        with ExclusiveStateLock(paths, wait_seconds=wait) as state:
+            if args.command == "own-login":
+                _run_own_login(args, state, backend_factory)
+                return 0
             if args.command == "logout":
                 _run_logout(args, state)
                 return 0
