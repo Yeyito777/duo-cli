@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import time
 
 from .errors import AuthenticationError, BusyError, DuoCliError
 
@@ -228,11 +229,80 @@ class StateDirectory:
         return removed
 
 
+    # Small private files used only by `duo own-login` (ticket and audit log).
+    # They follow the same FD-anchored, no-symlink, 0600 rules as enrollment.
+
+    def _open_private_other(self, name: str, flags: int) -> int:
+        try:
+            fd = os.open(name, flags | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=self.fd)
+        except FileNotFoundError:
+            raise
+        except OSError as exc:
+            raise DuoCliError("Cannot securely open private Duo state.") from exc
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or not _is_current_owner(info) or stat.S_IMODE(info.st_mode) != 0o600:
+            os.close(fd)
+            raise DuoCliError("Private Duo state must be a current-user-owned regular file with mode 0600.")
+        return fd
+
+    def read_private_file(self, name: str, *, limit: int) -> bytes | None:
+        try:
+            fd = self._open_private_other(name, os.O_RDONLY)
+        except FileNotFoundError:
+            return None
+        with os.fdopen(fd, "rb", closefd=True) as handle:
+            content = handle.read(limit + 1)
+        if len(content) > limit:
+            raise DuoCliError("Private Duo state is unexpectedly large.")
+        return content
+
+    def write_private_file(self, name: str, content: bytes) -> None:
+        """Atomically create or replace one small private state file."""
+        temporary = ".tmp-private-" + secrets.token_hex(16)
+        try:
+            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=self.fd)
+            try:
+                os.fchmod(fd, 0o600)
+                os.write(fd, content)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            os.replace(temporary, name, src_dir_fd=self.fd, dst_dir_fd=self.fd)
+            os.fsync(self.fd)
+        except OSError as exc:
+            try:
+                os.unlink(temporary, dir_fd=self.fd)
+            except OSError:
+                pass
+            raise DuoCliError("Cannot save private Duo state.") from exc
+
+    def append_private_file(self, name: str, content: bytes) -> None:
+        fd = self._open_private_other(name, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+        try:
+            os.write(fd, content)
+            os.fsync(fd)
+        except OSError as exc:
+            raise DuoCliError("Cannot append to private Duo state.") from exc
+        finally:
+            os.close(fd)
+
+    def remove_private_file(self, name: str) -> bool:
+        try:
+            os.unlink(name, dir_fd=self.fd)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise DuoCliError("Cannot remove private Duo state.") from exc
+        os.fsync(self.fd)
+        return True
+
+
 class ExclusiveStateLock:
     """Non-blocking exclusive lock and lifetime owner of a StateDirectory FD."""
 
-    def __init__(self, paths: StatePaths):
+    def __init__(self, paths: StatePaths, *, wait_seconds: float = 0.0):
         self.paths = paths
+        self.wait_seconds = wait_seconds
         self.state: StateDirectory | None = None
         self.lock_fd: int | None = None
 
@@ -245,7 +315,17 @@ class ExclusiveStateLock:
             info = os.fstat(self.lock_fd)
             if not stat.S_ISREG(info.st_mode) or not _is_current_owner(info) or stat.S_IMODE(info.st_mode) != 0o600:
                 raise DuoCliError("Duo state lock is not a current-user-owned mode-0600 regular file.")
-            fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Ordinary commands never wait. `own-login` waits briefly so an
+            # unattended login is not lost to a concurrent read-only command.
+            deadline = time.monotonic() + self.wait_seconds
+            while True:
+                try:
+                    fcntl.flock(self.lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.25)
             return self.state
         except BlockingIOError as exc:
             self._close()
