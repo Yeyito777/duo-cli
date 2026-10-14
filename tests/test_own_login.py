@@ -195,5 +195,52 @@ class OwnLoginTests(unittest.TestCase):
         self.assertEqual([e["event"] for e in self.audit()], ["begin", "approved", "end"])
 
 
+
+class PublicIpTests(unittest.TestCase):
+    def fetch(self, outcomes: list):
+        import requests
+
+        calls, sleeps = [], []
+
+        class Response:
+            def __init__(self, status: int, text: str) -> None:
+                self.status_code, self.text = status, text
+
+        class Session:
+            trust_env = True
+
+            def get(self, url, **kwargs):
+                calls.append((url, kwargs, self.trust_env))
+                outcome = outcomes.pop(0)
+                if isinstance(outcome, Exception):
+                    raise outcome
+                return Response(*outcome)
+
+            def close(self) -> None:
+                pass
+
+        with patch.object(requests, "Session", Session):
+            try:
+                return own_login.fetch_public_ip(sleep=sleeps.append), calls, sleeps
+            except own_login.OwnLoginRefused as error:
+                return error, calls, sleeps
+
+    def test_transient_failures_are_retried_with_the_same_strict_request(self) -> None:
+        import requests
+
+        result, calls, sleeps = self.fetch([requests.ConnectionError("down"), (503, ""), (200, IP + "\n")])
+        self.assertEqual(result, IP)
+        self.assertEqual(sleeps, [1.0, 1.0])
+        for url, kwargs, trust_env in calls:
+            self.assertEqual(url, own_login.PUBLIC_IP_URL)
+            self.assertFalse(kwargs["allow_redirects"])
+            self.assertFalse(trust_env)
+
+    def test_still_refuses_after_bounded_attempts(self) -> None:
+        result, calls, _ = self.fetch([(200, "not-an-ip"), (429, ""), (200, "")])
+        self.assertIsInstance(result, own_login.OwnLoginRefused)
+        self.assertEqual(len(calls), own_login.PUBLIC_IP_ATTEMPTS)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -73,7 +73,7 @@ Flow and checks:
    - its received time is no earlier than 30 seconds before the ticket began;
    - it is a code-required Verified Push;
    - its host equals this machine's public IP (fetched from
-     `https://api.ipify.org`, no proxies or redirects; failure refuses);
+     `https://api.ipify.org`, no proxies or redirects, up to 3 tries; failure refuses);
    - the code on stdin (read by the caller from its own Duo page) matches any
      code Duo exposes, and the request is unchanged on a decisive refetch.
 
