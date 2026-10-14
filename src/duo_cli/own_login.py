@@ -36,6 +36,7 @@ RECEIVED_SKEW_SECONDS = 30
 TICKET_FILE = "own-login-ticket.json"
 AUDIT_FILE = "own-login-audit.jsonl"
 PUBLIC_IP_URL = "https://api.ipify.org"
+PUBLIC_IP_ATTEMPTS = 3
 TICKET_RE = re.compile(r"^[0-9a-f]{32}$")
 ACCOUNT_RE = re.compile(r"^[a-z0-9]{1,32}$")
 _MAX_AUDIT_BYTES = 4_000_000
@@ -45,8 +46,13 @@ class OwnLoginRefused(DuoCliError):
     """A check failed; no approval was sent."""
 
 
-def fetch_public_ip() -> str:
-    """This machine's public IPv4 address, as Duo sees the login's origin."""
+def fetch_public_ip(*, sleep: Callable[[float], None] = time.sleep) -> str:
+    """This machine's public IPv4 address, as Duo sees the login's origin.
+
+    Retried a few times: one transient ipify failure (Oct 14 2026) otherwise
+    refuses a login whose push is already waiting. Still only ipify, with no
+    proxies or redirects, and any failure still refuses.
+    """
     try:
         import requests
     except ImportError as exc:
@@ -54,16 +60,21 @@ def fetch_public_ip() -> str:
     session = requests.Session()
     session.trust_env = False
     try:
-        response = session.get(PUBLIC_IP_URL, timeout=(5, 5), allow_redirects=False)
-        text = response.text.strip() if response.status_code == 200 else ""
-    except requests.RequestException:
-        text = ""
+        for attempt in range(PUBLIC_IP_ATTEMPTS):
+            if attempt:
+                sleep(1.0)
+            try:
+                response = session.get(PUBLIC_IP_URL, timeout=(4, 4), allow_redirects=False)
+                text = response.text.strip() if response.status_code == 200 else ""
+            except requests.RequestException:
+                text = ""
+            try:
+                return str(ipaddress.ip_address(text))
+            except ValueError:
+                continue
     finally:
         session.close()
-    try:
-        return str(ipaddress.ip_address(text))
-    except ValueError:
-        raise OwnLoginRefused("Could not determine this machine's public IP address; refusing approval.") from None
+    raise OwnLoginRefused("Could not determine this machine's public IP address; refusing approval.")
 
 
 def _iso(epoch: float) -> str:
