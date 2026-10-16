@@ -3,7 +3,9 @@
 `duo-cli` is a deliberately small external tool for viewing pending Duo Push
 requests and approving **one exact request** on a separately enrolled local
 emulated device. It has no watcher, daemon, `latest`, wildcard, bulk drain,
-denial, passcode, or background auto-approval feature.
+denial, or passcode feature. Its one automatic approval path is `own-login`,
+reserved for the `utmail` and `quercus` helper tools re-logging into U of T (see
+below and [SECURITY.md](SECURITY.md)).
 
 > **Unsupported private protocol; tenant authorization required.** Duo provides
 > no official API for clients to list or approve Duo Mobile Push requests. This
@@ -82,6 +84,24 @@ printf %s '492' | duo approve req-code-02 \
 The code must be a 1–64 character ASCII unreserved token. The client reads stdin
 only after it has proved the selected transaction is code-required; it never
 guesses, displays, logs, fingerprints publicly, or stores the code.
+
+## Own-login (utmail and quercus only)
+
+```bash
+duo own-login begin --caller utmail|quercus --json   # before opening the login page
+printf %s CODE | UOFT_UTORID=... duo own-login approve TICKET --json
+duo own-login end TICKET --outcome completed|failed
+```
+
+When `utmail` or `quercus` finds its persistent U of T session expired, it starts
+the weblogin itself, reads the Verified Push code from its own Duo page, and
+asks `own-login approve` to approve the one matching request. Approval requires
+a live ticket from `begin` (≤180 s), exactly one pending request that appeared
+after the ticket, service `Weblogin Standard`/`Azure AD Standard`, the expected
+UTORid, this machine's public IP as host, and a code-required Verified Push.
+At most 6 attempts per rolling 24 h; every step is appended to
+`config/own-login-audit.jsonl` without codes. A live ticket also serves as the
+lock so two tools never log in at once. No other caller may use this command.
 
 ## Install
 

@@ -19,6 +19,9 @@ Usage:
   duo approve REQUEST_ID --confirm-fingerprint FINGERPRINT [--code-stdin] [--json]
   duo login --qr FILE [--json]       # setup only; performs real pairing if invoked
   duo logout [--json]                # removes local state only
+  duo own-login begin --caller utmail|quercus [--json]
+  duo own-login approve TICKET [--json]        # code on stdin, account in UOFT_UTORID
+  duo own-login end TICKET --outcome completed|failed [--json]
 
 Global option (before the command):
   --state-dir DIR                     # defaults to DUO_STATE_DIR or tool config/
@@ -26,9 +29,12 @@ Global option (before the command):
 Only exact IDs and code-independent fingerprints displayed by `duo request` may
 be approved. Verified Push codes are accepted only through exact bounded stdin
 with `--code-stdin`; argv codes are rejected. There is no latest, wildcard, bulk,
-watcher, daemon, deny, or automatic-approval command. `login` uses unsupported
-private Duo protocol and must only be used after explicit tenant authorization for
-a separately enrolled device. Run `duo COMMAND --help` for detail.
+watcher, daemon, or deny command. The one automatic approval is `own-login`:
+utmail/quercus approving the Verified Push of a U of T login they started
+themselves, under the checks, daily cap, and audit log in SECURITY.md. `login`
+uses unsupported private Duo protocol and must only be used after explicit
+tenant authorization for a separately enrolled device. Run `duo COMMAND --help`
+for detail.
 USAGE
 }
 
@@ -51,7 +57,7 @@ case "$cmd" in
     fi
     exit 0
     ;;
-  requests|request|approve|login|logout)
+  requests|request|approve|own-login|login|logout)
     if [[ ! -x "$PYTHON" ]]; then
       echo "duo: runtime not installed at $PYTHON" >&2
       echo "Create it with: python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements.lock" >&2
