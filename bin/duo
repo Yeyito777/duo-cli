@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON="$PROJECT_DIR/.venv/bin/python3"
+umask 077
+export DUO_STATE_DIR="${DUO_STATE_DIR:-${UOFT_ROOT:-$HOME/Desktop/uoft}/.private/duo}"
 
 usage() {
   cat <<'USAGE'
