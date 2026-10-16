@@ -12,3 +12,12 @@ login. Approval requires a fresh exact ID and fingerprint. Verified Push code
 must come from that login and be passed through stdin. No bulk approval.
 
 Tests: `.venv/bin/python -m unittest discover -s tests`.
+
+## October 15 upstream authentication update
+
+- Upstream `c813a7e` integrated; local launcher/state-path setup preserved in
+  checkpoint `local/pre-auth-update-20261015` (`e8576b8`).
+- Upstream adds the bounded `own-login` protocol used by Quercus/UTmail
+  automatic re-login, including public-IP retry and audit/locking checks.
+- Installing that code is not authorization to execute it. Continue following
+  the active tool policy; this update performed no pairing or Duo approval.
