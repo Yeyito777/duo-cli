@@ -63,7 +63,8 @@ case "$cmd" in
     fi
     shift
     export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
-    exec "$PYTHON" -m src.duo_cli.cli "${prefix[@]}" "$cmd" "$@"
+    # -P: never let the caller's working directory shadow this package.
+    exec "$PYTHON" -P -m src.duo_cli.cli "${prefix[@]}" "$cmd" "$@"
     ;;
   *)
     echo "duo: unknown command '$cmd'" >&2
