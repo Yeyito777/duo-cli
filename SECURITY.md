@@ -86,7 +86,10 @@ Cap: at most 6 `begin`s (so at most 6 approvals) per rolling 24 hours.
 Audit: every begin, approval, refusal, and end is appended to
 `own-login-audit.jsonl` in the state directory (mode `0600`, append-only):
 time, event, caller, ticket ID, and for approvals the service, host, and
-request ID; refusals carry the sanitized reason. Codes, passwords, and raw
+request ID; refusals carry the sanitized reason. An approval whose request
+broke in transit is logged as `unknown`, not `refused`: Duo may have applied
+it. An `end` after a successful approval takes its caller from the ticket's
+`begin` entry. Codes, passwords, and raw
 payloads are never written.
 
 ## Transport and setup containment

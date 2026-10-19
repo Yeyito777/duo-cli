@@ -21,7 +21,7 @@ import time
 from typing import Callable, Sequence
 
 from .backend import DuoBackend
-from .errors import BusyError, DuoCliError, UsageError
+from .errors import BusyError, DuoCliError, OutcomeUnknownError, UsageError
 from .models import PendingRequest, VerificationMode, _parse_expiry
 from .state import StateDirectory
 
@@ -204,7 +204,8 @@ def approve(
         backend.reply(first.request_id, "approve", code=code)
     except Exception as exc:
         reason = str(exc) if isinstance(exc, DuoCliError) else "unexpected internal failure"
-        _audit(state, now(), "refused", caller=caller, ticket=ticket_id, reason=reason)
+        event = "unknown" if isinstance(exc, OutcomeUnknownError) else "refused"
+        _audit(state, now(), event, caller=caller, ticket=ticket_id, reason=reason)
         state.remove_private_file(TICKET_FILE)
         raise
     _audit(
@@ -228,7 +229,26 @@ def end(state: StateDirectory, ticket_id: str, outcome: str, *, now: float) -> b
         raise UsageError("TICKET must be the value printed by `duo own-login begin`.")
     ticket = _load_ticket(state)
     removed = False
+    caller = None
     if ticket is not None and hmac.compare_digest(str(ticket.get("id", "")), ticket_id):
         removed = state.remove_private_file(TICKET_FILE)
-    _audit(state, now, "end", caller=(ticket or {}).get("caller"), ticket=ticket_id, outcome=outcome)
+        caller = ticket.get("caller")
+    if caller is None:
+        # A successful approve already consumed the ticket; its begin entry
+        # still names the caller.
+        caller = _caller_from_audit(state, ticket_id)
+    _audit(state, now, "end", caller=caller, ticket=ticket_id, outcome=outcome)
     return removed
+
+
+def _caller_from_audit(state: StateDirectory, ticket_id: str) -> str | None:
+    raw = state.read_private_file(AUDIT_FILE, limit=_MAX_AUDIT_BYTES) or b""
+    for line in reversed(raw.splitlines()):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("event") == "begin" and entry.get("ticket") == ticket_id:
+            caller = entry.get("caller")
+            return caller if caller in CALLERS else None
+    return None

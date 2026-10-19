@@ -39,3 +39,7 @@ class VerifiedPushError(DuoCliError):
 
 class ProtocolSemanticsError(DuoCliError):
     """The private transaction has no positive, safe approval discriminator."""
+
+
+class OutcomeUnknownError(DuoCliError):
+    """An approval left this machine but no answer came back; Duo may have applied it."""

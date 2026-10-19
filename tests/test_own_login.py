@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from src.duo_cli import own_login
 from src.duo_cli.cli import _verify_code, main
-from src.duo_cli.errors import BusyError, UsageError, VerifiedPushError
+from src.duo_cli.errors import BusyError, OutcomeUnknownError, UsageError, VerifiedPushError
 from src.duo_cli.models import PendingRequest
 from src.duo_cli.state import ExclusiveStateLock, StatePaths
 
@@ -87,6 +87,30 @@ class OwnLoginTests(unittest.TestCase):
         self.assertEqual(events[1]["host"], IP)
         self.assertEqual(events[1]["requestId"], "req-uoft-01")
         self.assertNotIn("295", (self.paths.root / own_login.AUDIT_FILE).read_text())
+
+    def test_end_after_approval_still_records_the_caller(self) -> None:
+        backend = FakeBackend([[], [uoft()]])
+        ticket = self.begin(backend, "quercus")
+        self.clock += 10
+        self.approve(backend, ticket)
+        with ExclusiveStateLock(self.paths) as state:
+            self.assertFalse(own_login.end(state, ticket, "completed", now=self.clock))
+        end = self.audit()[-1]
+        self.assertEqual((end["event"], end["caller"], end["outcome"]), ("end", "quercus", "completed"))
+
+    def test_approval_with_unknown_outcome_is_audited_as_unknown(self) -> None:
+        class LostReply(FakeBackend):
+            def reply(self, urgid: str, answer: str, code: str | None = None) -> None:
+                super().reply(urgid, answer, code)
+                raise OutcomeUnknownError("in transit")
+
+        backend = LostReply([[], [uoft()]])
+        ticket = self.begin(backend)
+        self.clock += 10
+        with self.assertRaises(OutcomeUnknownError):
+            self.approve(backend, ticket)
+        self.assertEqual(self.audit()[-1]["event"], "unknown")
+        self.assertFalse(self.ticket_exists())
 
     def test_waits_briefly_for_the_push_to_arrive(self) -> None:
         backend = FakeBackend([[], [], [], [uoft()]])
