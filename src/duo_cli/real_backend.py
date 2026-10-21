@@ -28,7 +28,7 @@ import subprocess
 import urllib.parse
 from typing import Any
 
-from .errors import AuthenticationError, DuoCliError
+from .errors import AuthenticationError, DuoCliError, OutcomeUnknownError
 from .models import CODE_RE, URGID_RE, PendingRequest
 from .state import StateDirectory
 
@@ -253,6 +253,12 @@ class Duo:
             )
         except Exception as exc:
             requests, _, _, _ = _dependencies()
+            if operation == "approval":
+                # The approval may have reached Duo before the connection broke.
+                raise OutcomeUnknownError(
+                    f"Duo {operation} request failed in transit; the approval may or may not have been applied. "
+                    "Run `duo requests` before retrying."
+                ) from exc
             if isinstance(exc, requests.RequestException):
                 raise DuoCliError(f"Duo {operation} request failed; check connectivity and enrollment.") from exc
             raise DuoCliError(f"Duo {operation} transport failed.") from exc

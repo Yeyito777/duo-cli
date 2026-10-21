@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from src.duo_cli.errors import AuthenticationError, DuoCliError
+from src.duo_cli.errors import AuthenticationError, DuoCliError, OutcomeUnknownError
 from src.duo_cli.models import PendingRequest, VerificationMode
 from src.duo_cli.real_backend import Duo, validate_api_host
 from src.duo_cli.state import ExclusiveStateLock, StatePaths
@@ -195,6 +195,24 @@ class ModelAndPrivateProtocolTests(unittest.TestCase):
         self.assertEqual(signed[1:4], ["GET", "api-0123abcd.duosecurity.com", "/push/v2/device/transactions"])
         self.assertEqual(signed[4], "akey=fake-akey&fips_status=1&hsm_status=true&pkpush=rsa-sha512")
         self.assertIn("Authorization", kwargs["headers"])
+
+    def test_approval_transport_failure_reports_an_unknown_outcome(self) -> None:
+        class FailingSession(SessionSpy):
+            def request(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+                raise FakeRequests.RequestException("read timeout")
+
+        spy = FailingSession([])
+        with tempfile.TemporaryDirectory() as temporary, ExclusiveStateLock(StatePaths(Path(temporary))) as state:
+            duo = Duo(state, session=spy)
+            duo.key, duo.host, duo.akey, duo.pkey = object(), "api-0123abcd.duosecurity.com", "fake-akey", "fake-pkey"
+            with patch("src.duo_cli.real_backend._dependencies", return_value=(FakeRequests, FakeHash, object(), FakePkcs)):
+                with self.assertRaises(OutcomeUnknownError) as raised:
+                    duo.reply("opaque-id", "approve")
+                with self.assertRaises(DuoCliError) as read_failure:
+                    duo.transactions()
+        self.assertIn("may or may not", str(raised.exception))
+        self.assertNotIsInstance(read_failure.exception, OutcomeUnknownError)
 
     def test_reply_path_is_one_encoded_segment_and_unsafe_values_never_reach_session(self) -> None:
         FakeHash.messages.clear()
