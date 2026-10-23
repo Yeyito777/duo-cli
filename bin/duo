@@ -7,6 +7,15 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON="$PROJECT_DIR/.venv/bin/python3"
 
+# Per-machine settings (e.g. DUO_STATE_DIR on a second install) live in the
+# untracked config/local.env, a bash fragment. Absent, the defaults apply.
+if [[ -f "$PROJECT_DIR/config/local.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$PROJECT_DIR/config/local.env"
+  set +a
+fi
+
 usage() {
   cat <<'USAGE'
 duo — narrowly scoped client for one separately enrolled local emulated Duo device
